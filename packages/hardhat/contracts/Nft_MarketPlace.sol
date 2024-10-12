@@ -6,8 +6,11 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 
-contract NFTMarketplace is Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
+contract NFTMarketplace is ERC721URIStorage, Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
+
+    uint256 private tokenIdCounter; 
     uint256 public fee;
 
     event NFTListed(uint256 indexed tokenId, uint256 price, address indexed seller);
@@ -23,13 +26,15 @@ contract NFTMarketplace is Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
     }
 
     mapping(uint256 => Listing) public listings;
-    mapping(address => mapping(uint256 => bool)) public ownerTokens; // Nested mapping to track ownership
+    mapping(address => mapping(uint256 => bool)) public ownerTokens; 
+    event MintItemLog(address to, uint256 tokenId, string uri);
 
     IERC721 public nftContract;
 
-    constructor(uint256 _feePercent, address _nftContract) Ownable(msg.sender) {
+    constructor(uint256 _feePercent, address _nftContract) ERC721("MyNFTCollection", "MNFT") Ownable(msg.sender){
         fee = _feePercent;
         nftContract = IERC721(_nftContract);
+        tokenIdCounter = 0; 
     }
 
     modifier isTokenOwner(uint256 _tokenId) {
@@ -42,12 +47,12 @@ contract NFTMarketplace is Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
         _;
     }
 
-    function pause() public  {
+    function pause() public onlyOwner {
         _pause();
         emit Paused();
     }
 
-    function unpause() public  {
+    function unpause() public onlyOwner {
         _unpause();
         emit Unpaused();
     }
@@ -60,7 +65,6 @@ contract NFTMarketplace is Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
     {
         require(_price > 0, "Price must be greater than zero");
 
-        // The user must approve the contract before listing
         require(
             nftContract.getApproved(_tokenId) == address(this) || nftContract.isApprovedForAll(msg.sender, address(this)),
             "Marketplace not approved"
@@ -95,7 +99,6 @@ contract NFTMarketplace is Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
     {
         Listing memory listing = listings[_tokenId];
 
-        // Checks at the beginning
         require(listing.active, "NFT is not for sale");
         require(msg.value >= listing.price, "Insufficient funds");
         require(listing.seller != address(0), "Seller address is zero");
@@ -105,32 +108,36 @@ contract NFTMarketplace is Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
         uint256 feeAmount = (price * fee) / 100;
         uint256 sellerAmount = price - feeAmount;
 
-        // Transfer the NFT to the buyer
         nftContract.safeTransferFrom(listing.seller, msg.sender, _tokenId);
 
-        // Transfer the fee to the owner of the marketplace
         (bool sentToOwner, ) = owner().call{value: feeAmount}("");
         require(sentToOwner, "Failed to send fee to owner");
 
-        // Transfer the remaining funds to the seller
         (bool sentToSeller, ) = listing.seller.call{value: sellerAmount}("");
         require(sentToSeller, "Failed to send amount to seller");
 
-        // Refund any excess funds to the buyer
         uint256 excessAmount = msg.value - price;
         if (excessAmount > 0) {
             (bool refunded, ) = msg.sender.call{value: excessAmount}("");
             require(refunded, "Failed to refund excess amount");
         }
 
-        // Update listing status
         listings[_tokenId].active = false;
         ownerTokens[listing.seller][_tokenId] = false;
 
         emit NFTPurchased(msg.sender, _tokenId, price, feeAmount);
     }
 
-    // Required function for safeTransferFrom to work
+    function mintItem(address to, string memory uri) public returns (uint256) {
+        uint256 tokenId = tokenIdCounter;  
+        tokenIdCounter++; 
+
+        _safeMint(to, tokenId);
+        _setTokenURI(tokenId, uri);
+        emit MintItemLog(to, tokenId, uri);  
+        return tokenId;
+    }
+
     function onERC721Received(
         address,
         address,

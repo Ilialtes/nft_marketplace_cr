@@ -44,7 +44,7 @@ const deployNFTMarketplace: DeployFunction = async (hre: HardhatRuntimeEnvironme
 
   // Set the constructor parameters for NFTMarketplace
   const feePercent = 2; // Example fee percentage (2%)
-  const nftContractAddress = "0x5FbDB2315678afecb367f032d93F642f64180aa3"; // Replace with the deployed ERC721 contract address
+  const nftContractAddress = "0x33E08C568eFbc29f4dc16edc37c850aB28DaE4cF"; // Replace with the deployed ERC721 contract address
 
   // Deploy the contract
   await deploy("NFTMarketplace", {
