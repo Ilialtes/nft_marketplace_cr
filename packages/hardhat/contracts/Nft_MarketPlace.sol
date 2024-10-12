@@ -1,14 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
 
 contract NFTMarketplace is Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
-    uint256 private fee;
+    uint256 public fee;
 
     event NFTListed(uint256 indexed tokenId, uint256 price, address indexed seller);
     event NFTPurchased(address indexed buyer, uint256 indexed tokenId, uint256 price, uint256 fee);
@@ -27,7 +27,7 @@ contract NFTMarketplace is Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
 
     IERC721 public nftContract;
 
-    constructor(uint256 _feePercent, address _nftContract) Ownable() {
+    constructor(uint256 _feePercent, address _nftContract) Ownable(msg.sender) {
         fee = _feePercent;
         nftContract = IERC721(_nftContract);
     }
@@ -42,12 +42,12 @@ contract NFTMarketplace is Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
         _;
     }
 
-    function pause() public onlyOwner {
+    function pause() public  {
         _pause();
         emit Paused();
     }
 
-    function unpause() public onlyOwner {
+    function unpause() public  {
         _unpause();
         emit Unpaused();
     }
