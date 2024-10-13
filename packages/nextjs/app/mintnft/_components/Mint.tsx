@@ -2,17 +2,45 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useLocalStorage } from "usehooks-ts";
+import { useAccount } from "wagmi";
+import { useScaffoldReadContract } from "~~/hooks/scaffold-eth/useScaffoldReadContract";
 import { useScaffoldWriteContract } from "~~/hooks/scaffold-eth/useScaffoldWriteContract";
 import { useAllContracts } from "~~/utils/scaffold-eth/contractsData";
+
+const ipfsToUrl = (ipfsUri: string) => {
+  return ipfsUri.replace("ipfs://", "https://ipfs.io/ipfs/");
+};
+
+const tokenURIs = [
+  "ipfs://QmSwdtyDNALkn7Pa2g13yQeq49wZgJGNgCyZnXA9SovBRK",
+  "ipfs://QmZUgk8A1Tc2WdTdQabk9DMo1XRNgq9P4vYHGVctmyqStj",
+  "ipfs://QmaBqamxUUKPXg8BSqkyYnNuUKedu1zv5c2JQM1k22UeTK",
+  "ipfs://QmedZpxnrHTSCxtgSGW52Mnhjw7fFn49oHweB4DF6ByraX",
+  "ipfs://QmUc9eYruNK1aQM4UYf3ygj4dAAGTWgx3EQQp9UGgfYsky",
+  "ipfs://QmfEoND3HcG24KU5DAKppajXKhihb4rwGeGxJXgAFT5bnS",
+  "ipfs://QmQctmoLMjj9mhYaKcC4qCFVCcRXSBuX78CG5UsuJGQmAc",
+  "ipfs://QmTW25nSb3szVEgaLL8pnd6piLLAWPL9owLDRhxqkc6eMi",
+  "ipfs://QmfD7KLUM4Yc5NRTWpJN7QtQ5xN6SmQCcQAL65oEp4Uxnu",
+  "ipfs://QmPjyh3zcXoJmeN72V3bawAH9yAxUC8SHuM5GQmxkyLQLL",
+  "ipfs://QmXEGTfr5hhEZ5oRaSLrWxPhpjmj9RSBxUW1gjMbdSkTML",
+];
 
 const selectedContractStorageKey = "scaffoldEth2.selectedContract";
 
 export function MintNFT() {
+  const { address, isConnected } = useAccount();
+
   const {
     writeContractAsync: writeYourContractAsync,
     isSuccess,
     data: txData,
   } = useScaffoldWriteContract("NFTMarketplace");
+
+  const { data: ownedURIs } = useScaffoldReadContract({
+    contractName: "NFTMarketplace",
+    functionName: "getOwnedTokenURIs",
+    args: [address],
+  });
 
   const contractsData = useAllContracts();
   const contractNames = useMemo(() => Object.keys(contractsData) as string[], [contractsData]);
@@ -23,8 +51,7 @@ export function MintNFT() {
     { initializeWithValue: false },
   );
 
-  const [recipient, setRecipient] = useState<string>("");
-  const [tokenURI, setTokenURI] = useState<string>("");
+  const [minting, setMinting] = useState<boolean>(false);
   const [mintedTokenId] = useState<number | null>(null);
 
   useEffect(() => {
@@ -33,34 +60,37 @@ export function MintNFT() {
     }
   }, [contractNames, selectedContract, setSelectedContract]);
 
+  const getRandomURI = () => {
+    const randomIndex = Math.floor(Math.random() * tokenURIs.length);
+    return tokenURIs[randomIndex];
+  };
+
   const mintNFT = async () => {
     try {
-      if (!recipient || !tokenURI) {
-        alert("Please enter recipient address and token URI.");
-        return;
-      }
+      setMinting(true);
+      const tokenURI = getRandomURI();
       const txHash = await writeYourContractAsync({
         functionName: "mintItem",
-        args: [recipient, tokenURI],
+        args: [tokenURI],
       });
 
       console.log("Transaction hash:", txHash);
     } catch (error) {
       console.error("Error minting NFT:", error);
+    } finally {
+      setMinting(false);
     }
   };
 
   useEffect(() => {
     if (isSuccess && txData) {
       console.log("Transaction successful:", txData);
-      // Extract tokenId from the transaction receipt or logs (you might need to parse events here)
-      console.log(txData);
-      /*  const tokenId = txData?.logs?.[0]?.args?.tokenId; // Adjust if needed
-      if (tokenId) {
-        setMintedTokenId(parseInt(tokenId));
-      } */
     }
   }, [isSuccess, txData]);
+
+  const handleImageError = (event: any) => {
+    event.target.src = "/images/placeholder.png";
+  };
 
   return (
     <div className="flex flex-col gap-y-6 lg:gap-y-8 py-8 lg:py-12 justify-center items-center">
@@ -88,27 +118,33 @@ export function MintNFT() {
             </div>
           )}
 
-          {/* Form to enter minting details */}
           <div className="w-full max-w-lg flex flex-col gap-4">
-            <input
-              type="text"
-              placeholder="Recipient Address"
-              className="input input-bordered w-full"
-              value={recipient}
-              onChange={e => setRecipient(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="Token URI"
-              className="input input-bordered w-full"
-              value={tokenURI}
-              onChange={e => setTokenURI(e.target.value)}
-            />
-            <button onClick={mintNFT} className="btn btn-primary w-full" disabled={false}>
-              {"Minting..."}
+            <button onClick={mintNFT} className="btn btn-primary w-full" disabled={minting}>
+              {minting ? "Minting..." : "Mint a Random NFT"}
             </button>
           </div>
+
           {mintedTokenId !== null && <p className="mt-4 text-green-500">Minted NFT Token ID: {mintedTokenId}</p>}
+
+          <div className="mt-8 w-full max-w-lg">
+            <h2 className="text-lg font-bold">Your Owned NFTs:</h2>
+            {ownedURIs && ownedURIs.length > 0 ? (
+              <div className="grid grid-cols-3 gap-4 mt-4">
+                {ownedURIs.map((uri: string, index: number) => (
+                  <div key={index} className="p-2 bg-gray-100 rounded-lg">
+                    <img
+                      src={ipfsToUrl(uri)}
+                      alt={`NFT ${index}`}
+                      className="w-full h-48 object-cover rounded-md"
+                      onError={handleImageError}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p>{isConnected ? "No NFTs owned yet." : "Please connect your wallet."}</p>
+            )}
+          </div>
         </>
       )}
     </div>

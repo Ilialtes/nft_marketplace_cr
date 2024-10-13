@@ -7,9 +7,11 @@ import "@openzeppelin/contracts/utils/Pausable.sol";
 import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 
 contract NFTMarketplace is ERC721URIStorage, Ownable, ReentrancyGuard, Pausable {
-
     uint256 private tokenIdCounter; 
     uint256 public fee;
+
+    // Mapping to keep track of which tokens are owned by each address
+    mapping(address => uint256[]) private addressToTokens;
 
     event NFTListed(uint256 indexed tokenId, uint256 price, address indexed seller);
     event NFTPurchased(address indexed buyer, uint256 indexed tokenId, uint256 price, uint256 fee);
@@ -24,7 +26,7 @@ contract NFTMarketplace is ERC721URIStorage, Ownable, ReentrancyGuard, Pausable 
 
     mapping(uint256 => Listing) public listings;
 
-    constructor(uint256 _feePercent) ERC721("MyNFTCollection", "MNFT") Ownable(msg.sender){
+    constructor(uint256 _feePercent) ERC721("MyNFTCollection", "MNFT") Ownable(msg.sender) {
         fee = _feePercent;
         tokenIdCounter = 0; 
     }
@@ -52,13 +54,18 @@ contract NFTMarketplace is ERC721URIStorage, Ownable, ReentrancyGuard, Pausable 
         _;
     }
 
-    function mintItem(address to, string memory uri) public returns (uint256) {
+    function mintItem(string memory uri) public returns (uint256) {
         uint256 tokenId = tokenIdCounter;
         tokenIdCounter++;  
-        _safeMint(to, tokenId); 
+
+        // Mint the token to the msg.sender and set its URI
+        _safeMint(msg.sender, tokenId); 
         _setTokenURI(tokenId, uri); 
 
-        emit MintItemLog(to, tokenId, uri); 
+        // Track the token in the addressToTokens mapping
+        addressToTokens[msg.sender].push(tokenId);
+
+        emit MintItemLog(msg.sender, tokenId, uri); 
         return tokenId;  
     }
 
@@ -108,6 +115,9 @@ contract NFTMarketplace is ERC721URIStorage, Ownable, ReentrancyGuard, Pausable 
 
         _transfer(listing.seller, msg.sender, _tokenId);
 
+        _removeTokenFromOwner(listing.seller, _tokenId);
+        addressToTokens[msg.sender].push(_tokenId);
+
         (bool sentToOwner, ) = owner().call{value: feeAmount}("");
         require(sentToOwner, "Failed to send fee to owner");
 
@@ -131,5 +141,28 @@ contract NFTMarketplace is ERC721URIStorage, Ownable, ReentrancyGuard, Pausable 
 
     function isOwner(address _owner, uint256 _tokenId) external view returns (bool) {
         return ownerOf(_tokenId) == _owner;
+    }
+
+    function getOwnedTokenURIs(address owner) external view returns (string[] memory) {
+        uint256 tokenCount = addressToTokens[owner].length;
+        string[] memory uris = new string[](tokenCount);
+
+        for (uint256 i = 0; i < tokenCount; i++) {
+            uint256 tokenId = addressToTokens[owner][i];
+            uris[i] = tokenURI(tokenId);
+        }
+
+        return uris;
+    }
+
+    function _removeTokenFromOwner(address owner, uint256 tokenId) internal {
+        uint256[] storage tokens = addressToTokens[owner];
+        for (uint256 i = 0; i < tokens.length; i++) {
+            if (tokens[i] == tokenId) {
+                tokens[i] = tokens[tokens.length - 1]; 
+                tokens.pop(); 
+                break;
+            }
+        }
     }
 }
