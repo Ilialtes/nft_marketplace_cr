@@ -37,8 +37,33 @@ const deployYourContract: DeployFunction = async function (hre: HardhatRuntimeEn
   console.log("👋 Initial greeting:", await yourContract.greeting());
 };
 
-export default deployYourContract;
+const deployNFTMarketplace: DeployFunction = async (hre: HardhatRuntimeEnvironment) => {
+  const { ethers, deployments, getNamedAccounts } = hre;
+  const { deploy } = deployments;
+  const { deployer } = await getNamedAccounts();
 
-// Tags are useful if you have multiple deploy files and only want to run one of them.
-// e.g. yarn deploy --tags YourContract
+  // Set the constructor parameters for NFTMarketplace
+  const feePercent = 2; // Example fee percentage (2%)
+
+  // Deploy the contract
+  await deploy("NFTMarketplace", {
+    from: deployer,
+    args: [feePercent], // Constructor arguments
+    log: true,
+  });
+
+  // Get the deployed contract
+  // const nftMarketplace = await ethers.getContract("NFTMarketplace", deployer);
+  await ethers.getContract("NFTMarketplace", deployer);
+
+  // console.log("NFTMarketplace deployed to:", nftMarketplace.address);
+};
+
+// Export both deployment functions
+export default deployNFTMarketplace;
+export { deployYourContract };
+
+// // Tags are useful if you have multiple deploy files and only want to run one of them.
+// // e.g. yarn deploy --tags YourContract
 deployYourContract.tags = ["YourContract"];
+deployNFTMarketplace.tags = ["NFTMarketplace"];

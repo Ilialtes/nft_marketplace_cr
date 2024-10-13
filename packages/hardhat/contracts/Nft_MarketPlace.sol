@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.27;
 
-import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/security/Pausable.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
-import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/ERC721URIStorage.sol";
 
-contract NFTMarketplace is Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
-    uint256 private fee;
+contract NFTMarketplace is ERC721URIStorage, Ownable, ReentrancyGuard, Pausable {
+    uint256 private tokenIdCounter; 
+    uint256 public fee;
+
+    // Mapping to keep track of which tokens are owned by each address
+    mapping(address => uint256[]) private addressToTokens;
 
     event NFTListed(uint256 indexed tokenId, uint256 price, address indexed seller);
     event NFTPurchased(address indexed buyer, uint256 indexed tokenId, uint256 price, uint256 fee);
     event NFTDelisted(uint256 indexed tokenId, address indexed seller);
-    event Paused();
-    event Unpaused();
+    event MintItemLog(address to, uint256 tokenId, string uri);
 
     struct Listing {
         uint256 price;
@@ -23,48 +25,58 @@ contract NFTMarketplace is Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
     }
 
     mapping(uint256 => Listing) public listings;
-    mapping(address => mapping(uint256 => bool)) public ownerTokens; // Nested mapping to track ownership
 
-    IERC721 public nftContract;
-
-    constructor(uint256 _feePercent, address _nftContract) Ownable() {
+    constructor(uint256 _feePercent) ERC721("MyNFTCollection", "MNFT") Ownable(msg.sender) {
         fee = _feePercent;
-        nftContract = IERC721(_nftContract);
+        tokenIdCounter = 0; 
     }
 
-    modifier isTokenOwner(uint256 _tokenId) {
-        require(nftContract.ownerOf(_tokenId) == msg.sender, "Not the owner");
+    modifier onlyTokenOwner(uint256 _tokenId) {
+        require(ownerOf(_tokenId) == msg.sender, "You do not own this NFT");
         _;
     }
 
-    modifier tokenNotListed(uint256 _tokenId) {
-        require(!listings[_tokenId].active, "NFT is already listed");
+    modifier isListed(uint256 _tokenId) {
+        require(listings[_tokenId].active, "NFT is not listed for sale");
         _;
     }
 
-    function pause() public onlyOwner {
-        _pause();
-        emit Paused();
+    modifier isNotListed(uint256 _tokenId) {
+        require(!listings[_tokenId].active, "NFT is already listed for sale");
+        _;
     }
 
-    function unpause() public onlyOwner {
-        _unpause();
-        emit Unpaused();
+    modifier isMarketplaceApproved(uint256 _tokenId) {
+        require(
+            getApproved(_tokenId) == address(this) || isApprovedForAll(msg.sender, address(this)),
+            "Marketplace is not approved to transfer this NFT"
+        );
+        _;
+    }
+
+    function mintItem(string memory uri) public returns (uint256) {
+        uint256 tokenId = tokenIdCounter;
+        tokenIdCounter++;  
+
+        // Mint the token to the msg.sender and set its URI
+        _safeMint(msg.sender, tokenId); 
+        _setTokenURI(tokenId, uri); 
+
+        // Track the token in the addressToTokens mapping
+        addressToTokens[msg.sender].push(tokenId);
+
+        emit MintItemLog(msg.sender, tokenId, uri); 
+        return tokenId;  
     }
 
     function listNFT(uint256 _tokenId, uint256 _price)
         external
-        isTokenOwner(_tokenId)
-        tokenNotListed(_tokenId)
         whenNotPaused
+        onlyTokenOwner(_tokenId)
+        isNotListed(_tokenId)
+        isMarketplaceApproved(_tokenId)
     {
         require(_price > 0, "Price must be greater than zero");
-
-        // The user must approve the contract before listing
-        require(
-            nftContract.getApproved(_tokenId) == address(this) || nftContract.isApprovedForAll(msg.sender, address(this)),
-            "Marketplace not approved"
-        );
 
         listings[_tokenId] = Listing({
             price: _price,
@@ -72,17 +84,16 @@ contract NFTMarketplace is Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
             active: true
         });
 
-        ownerTokens[msg.sender][_tokenId] = true;
-
         emit NFTListed(_tokenId, _price, msg.sender);
     }
 
-    function delistNFT(uint256 _tokenId) external isTokenOwner(_tokenId) whenNotPaused {
-        require(listings[_tokenId].active, "NFT is not listed");
-
+    function delistNFT(uint256 _tokenId)
+        external
+        whenNotPaused
+        onlyTokenOwner(_tokenId)
+        isListed(_tokenId)
+    {
         delete listings[_tokenId];
-
-        ownerTokens[msg.sender][_tokenId] = false;
 
         emit NFTDelisted(_tokenId, msg.sender);
     }
@@ -92,67 +103,66 @@ contract NFTMarketplace is Ownable, ReentrancyGuard, Pausable, IERC721Receiver {
         payable
         whenNotPaused
         nonReentrant
+        isListed(_tokenId)
     {
         Listing memory listing = listings[_tokenId];
-
-        // Checks at the beginning
-        require(listing.active, "NFT is not for sale");
         require(msg.value >= listing.price, "Insufficient funds");
-        require(listing.seller != address(0), "Seller address is zero");
-        require(nftContract.ownerOf(_tokenId) == listing.seller, "Seller no longer owns this NFT");
+        require(ownerOf(_tokenId) == listing.seller, "Seller no longer owns this NFT");
 
         uint256 price = listing.price;
         uint256 feeAmount = (price * fee) / 100;
         uint256 sellerAmount = price - feeAmount;
 
-        // Transfer the NFT to the buyer
-        nftContract.safeTransferFrom(listing.seller, msg.sender, _tokenId);
+        _transfer(listing.seller, msg.sender, _tokenId);
 
-        // Transfer the fee to the owner of the marketplace
+        _removeTokenFromOwner(listing.seller, _tokenId);
+        addressToTokens[msg.sender].push(_tokenId);
+
         (bool sentToOwner, ) = owner().call{value: feeAmount}("");
         require(sentToOwner, "Failed to send fee to owner");
 
-        // Transfer the remaining funds to the seller
         (bool sentToSeller, ) = listing.seller.call{value: sellerAmount}("");
         require(sentToSeller, "Failed to send amount to seller");
 
-        // Refund any excess funds to the buyer
         uint256 excessAmount = msg.value - price;
         if (excessAmount > 0) {
             (bool refunded, ) = msg.sender.call{value: excessAmount}("");
             require(refunded, "Failed to refund excess amount");
         }
 
-        // Update listing status
         listings[_tokenId].active = false;
-        ownerTokens[listing.seller][_tokenId] = false;
 
         emit NFTPurchased(msg.sender, _tokenId, price, feeAmount);
     }
 
-    // Required function for safeTransferFrom to work
-    function onERC721Received(
-        address,
-        address,
-        uint256,
-        bytes calldata
-    ) external pure override returns (bytes4) {
-        return this.onERC721Received.selector;
-    }
-
-    function getListing(uint256 _tokenId)
-        external
-        view
-        returns (Listing memory)
-    {
+    function getListing(uint256 _tokenId) external view returns (Listing memory) {
         return listings[_tokenId];
     }
 
-    function isOwner(address _owner, uint256 _tokenId)
-        external
-        view
-        returns (bool)
-    {
-        return ownerTokens[_owner][_tokenId];
+    function isOwner(address _owner, uint256 _tokenId) external view returns (bool) {
+        return ownerOf(_tokenId) == _owner;
+    }
+
+    function getOwnedTokenURIs(address owner) external view returns (string[] memory) {
+        uint256 tokenCount = addressToTokens[owner].length;
+        string[] memory uris = new string[](tokenCount);
+
+        for (uint256 i = 0; i < tokenCount; i++) {
+            uint256 tokenId = addressToTokens[owner][i];
+            uris[i] = tokenURI(tokenId);
+        }
+
+        return uris;
+    }
+
+    function _removeTokenFromOwner(address owner, uint256 tokenId) internal {
+        uint256[] storage tokens = addressToTokens[owner];
+        for (uint256 i = 0; i < tokens.length; i++) {
+            if (tokens[i] == tokenId) {
+                tokens[i] = tokens[tokens.length - 1]; 
+                tokens.pop(); 
+                break;
+            }
+        }
     }
 }
