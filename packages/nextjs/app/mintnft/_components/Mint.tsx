@@ -1,11 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 import { useLocalStorage } from "usehooks-ts";
 import { useAccount } from "wagmi";
 import { useScaffoldReadContract } from "~~/hooks/scaffold-eth/useScaffoldReadContract";
 import { useScaffoldWriteContract } from "~~/hooks/scaffold-eth/useScaffoldWriteContract";
 import { useAllContracts } from "~~/utils/scaffold-eth/contractsData";
+
+// Import the Image component from next/image
 
 const ipfsToUrl = (ipfsUri: string) => {
   return ipfsUri.replace("ipfs://", "https://ipfs.io/ipfs/");
@@ -132,10 +135,12 @@ export function MintNFT() {
               <div className="grid grid-cols-3 gap-4 mt-4">
                 {ownedURIs.map((uri: string, index: number) => (
                   <div key={index} className="p-2 bg-gray-100 rounded-lg">
-                    <img
+                    <Image
                       src={ipfsToUrl(uri)}
                       alt={`NFT ${index}`}
-                      className="w-full h-48 object-cover rounded-md"
+                      width={200}
+                      height={200}
+                      className="object-cover rounded-md"
                       onError={handleImageError}
                     />
                   </div>
