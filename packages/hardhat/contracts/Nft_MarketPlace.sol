@@ -143,17 +143,19 @@ contract NFTMarketplace is ERC721URIStorage, Ownable, ReentrancyGuard, Pausable 
         return ownerOf(_tokenId) == _owner;
     }
 
-    function getOwnedTokenURIs(address owner) external view returns (string[] memory) {
-        uint256 tokenCount = addressToTokens[owner].length;
-        string[] memory uris = new string[](tokenCount);
+  function getOwnedTokens(address owner) external view returns (uint256[] memory, string[] memory) {
+    uint256 tokenCount = addressToTokens[owner].length;
+    uint256[] memory tokenIds = new uint256[](tokenCount);
+    string[] memory uris = new string[](tokenCount);
 
-        for (uint256 i = 0; i < tokenCount; i++) {
-            uint256 tokenId = addressToTokens[owner][i];
-            uris[i] = tokenURI(tokenId);
-        }
-
-        return uris;
+    for (uint256 i = 0; i < tokenCount; i++) {
+        uint256 tokenId = addressToTokens[owner][i];
+        tokenIds[i] = tokenId;
+        uris[i] = tokenURI(tokenId);
     }
+
+    return (tokenIds, uris);
+}
 
     function _removeTokenFromOwner(address owner, uint256 tokenId) internal {
         uint256[] storage tokens = addressToTokens[owner];

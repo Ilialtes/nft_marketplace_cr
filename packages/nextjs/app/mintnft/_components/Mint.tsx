@@ -8,8 +8,7 @@ import { useScaffoldReadContract } from "~~/hooks/scaffold-eth/useScaffoldReadCo
 import { useScaffoldWriteContract } from "~~/hooks/scaffold-eth/useScaffoldWriteContract";
 import { useAllContracts } from "~~/utils/scaffold-eth/contractsData";
 
-// Import the Image component from next/image
-
+// Function to convert IPFS URI to a usable URL
 const ipfsToUrl = (ipfsUri: string) => {
   return ipfsUri.replace("ipfs://", "https://ipfs.io/ipfs/");
 };
@@ -33,15 +32,23 @@ const selectedContractStorageKey = "scaffoldEth2.selectedContract";
 export function MintNFT() {
   const { address, isConnected } = useAccount();
 
+  // Mint NFT
   const {
-    writeContractAsync: writeYourContractAsync,
+    writeContractAsync: writeMintContractAsync,
     isSuccess,
     data: txData,
   } = useScaffoldWriteContract("NFTMarketplace");
 
-  const { data: ownedURIs } = useScaffoldReadContract({
+  // Approve NFT for marketplace
+  const { writeContractAsync: writeApproveContractAsync } = useScaffoldWriteContract("NFTMarketplace");
+
+  // List NFT
+  const { writeContractAsync: writeListContractAsync } = useScaffoldWriteContract("NFTMarketplace");
+
+  // Get owned tokens
+  const { data: ownedTokens } = useScaffoldReadContract({
     contractName: "NFTMarketplace",
-    functionName: "getOwnedTokenURIs",
+    functionName: "getOwnedTokens",
     args: [address],
   });
 
@@ -55,7 +62,12 @@ export function MintNFT() {
   );
 
   const [minting, setMinting] = useState<boolean>(false);
+  const [listing, setListing] = useState<boolean>(false);
+  const [approving, setApproving] = useState<boolean>(false);
+  const [approved, setApproved] = useState<boolean>(false);
   const [mintedTokenId] = useState<number | null>(null);
+  const [selectedTokenId, setSelectedTokenId] = useState<string>("");
+  const [price, setPrice] = useState<string>("");
 
   useEffect(() => {
     if (!contractNames.includes(selectedContract)) {
@@ -68,11 +80,12 @@ export function MintNFT() {
     return tokenURIs[randomIndex];
   };
 
+  // Mint NFT
   const mintNFT = async () => {
     try {
       setMinting(true);
       const tokenURI = getRandomURI();
-      const txHash = await writeYourContractAsync({
+      const txHash = await writeMintContractAsync({
         functionName: "mintItem",
         args: [tokenURI],
       });
@@ -90,6 +103,42 @@ export function MintNFT() {
       console.log("Transaction successful:", txData);
     }
   }, [isSuccess, txData]);
+
+  const approveNFT = async () => {
+    try {
+      setApproving(true);
+      const txHash = await writeApproveContractAsync({
+        functionName: "approve",
+        args: ["0x5B215a8358BeF67cF7ac4DE8BeB21599bB0b096E", BigInt(selectedTokenId)],
+      });
+      console.log("Approval transaction hash:", txHash);
+      setApproved(true);
+    } catch (error) {
+      console.error("Error approving NFT:", error);
+      setApproved(false);
+    } finally {
+      setApproving(false);
+    }
+  };
+
+  const listNFT = async () => {
+    try {
+      if (!approved) {
+        console.error("NFT not approved yet.");
+        return;
+      }
+      setListing(true);
+      const txHash = await writeListContractAsync({
+        functionName: "listNFT",
+        args: [BigInt(selectedTokenId), BigInt(price)],
+      });
+      console.log("Transaction hash for listing:", txHash);
+    } catch (error) {
+      console.error("Error listing NFT:", error);
+    } finally {
+      setListing(false);
+    }
+  };
 
   const handleImageError = (event: any) => {
     event.target.src = "/images/placeholder.png";
@@ -131,18 +180,25 @@ export function MintNFT() {
 
           <div className="mt-8 w-full max-w-lg">
             <h2 className="text-lg font-bold">Your Owned NFTs:</h2>
-            {ownedURIs && ownedURIs.length > 0 ? (
+            {ownedTokens && ownedTokens[0].length > 0 ? (
               <div className="grid grid-cols-3 gap-4 mt-4">
-                {ownedURIs.map((uri: string, index: number) => (
+                {ownedTokens[0].map((tokenId: bigint, index: number) => (
                   <div key={index} className="p-2 bg-gray-100 rounded-lg">
+                    <p className="text-center text-blue-500">Token ID: {tokenId.toString()}</p>
                     <Image
-                      src={ipfsToUrl(uri)}
-                      alt={`NFT ${index}`}
+                      src={ipfsToUrl(ownedTokens[1][index])}
+                      alt={`NFT ${tokenId.toString()}`}
                       width={200}
                       height={200}
                       className="object-cover rounded-md"
                       onError={handleImageError}
                     />
+                    <button
+                      className="btn btn-secondary w-full mt-2"
+                      onClick={() => setSelectedTokenId(tokenId.toString())}
+                    >
+                      Select for Listing
+                    </button>
                   </div>
                 ))}
               </div>
@@ -150,6 +206,26 @@ export function MintNFT() {
               <p>{isConnected ? "No NFTs owned yet." : "Please connect your wallet."}</p>
             )}
           </div>
+
+          {selectedTokenId && (
+            <div className="w-full max-w-lg mt-6">
+              <h3 className="text-lg font-bold">Approve and List NFT</h3>
+              <p>Selected Token ID: {selectedTokenId}</p>
+              <input
+                type="text"
+                placeholder="Enter Price (in Wei)"
+                className="input input-bordered w-full mt-2"
+                value={price}
+                onChange={e => setPrice(e.target.value)}
+              />
+              <button onClick={approveNFT} className="btn btn-warning w-full mt-4" disabled={approving}>
+                {approving ? "Approving..." : "Approve NFT"}
+              </button>
+              <button onClick={listNFT} className="btn btn-primary w-full mt-4" disabled={listing || !approved}>
+                {listing ? "Listing..." : "List NFT"}
+              </button>
+            </div>
+          )}
         </>
       )}
     </div>

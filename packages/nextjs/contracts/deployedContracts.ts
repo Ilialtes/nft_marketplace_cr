@@ -7,7 +7,7 @@ import { GenericContractsDeclaration } from "~~/utils/scaffold-eth/contract";
 const deployedContracts = {
   11155111: {
     NFTMarketplace: {
-      address: "0x7540a128B2AF4368C2D75bFFE3f3a4dBDf1e9073",
+      address: "0x5B215a8358BeF67cF7ac4DE8BeB21599bB0b096E",
       abi: [
         {
           inputs: [
@@ -538,8 +538,13 @@ const deployedContracts = {
               type: "address",
             },
           ],
-          name: "getOwnedTokenURIs",
+          name: "getOwnedTokens",
           outputs: [
+            {
+              internalType: "uint256[]",
+              name: "",
+              type: "uint256[]",
+            },
             {
               internalType: "string[]",
               name: "",
